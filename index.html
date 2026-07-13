@@ -383,17 +383,26 @@ h1,h2,h3, .marca{ font-family:'Baloo 2', cursive; }
 input[type=file]{ display:none; }
 
 /* ---------- PRINT ---------- */
+.impressao{ display:none; }
+.impressao .foto-impressao{
+  display:inline-block; width:170px; margin:0 8px 8px 0; vertical-align:top;
+}
+.impressao .foto-impressao img{
+  width:170px; height:170px; object-fit:cover; border-radius:8px; border:1px solid var(--linha); display:block;
+}
 @media print{
   body{ background:#fff; }
-  .resumo-bar{ position:static; box-shadow:none; }
+  .resumo-bar{ display:none !important; }
   .abas-bar{ display:none !important; }
   .voltar-topo{ display:none !important; }
   .btn-rosa, .btn-outline{ display:none !important; }
   .add-foto{ display:none !important; }
+  .conteudo{ display:none !important; }
   .categoria{ display:block !important; box-shadow:none; border:1px solid var(--linha); break-inside: avoid; }
   .item{ break-inside: avoid; }
   .topo::after{ display:none; }
   .dados-card{ box-shadow:none; border:1px solid var(--linha); }
+  .impressao{ display:block !important; max-width:960px; margin:24px auto; padding:0 20px; }
 }
 </style>
 </head>
@@ -439,10 +448,11 @@ input[type=file]{ display:none; }
       <span class="status reprovada" id="resumoStatus">Reprovada</span>
     </div>
     <div class="resumo-acoes">
-      <button class="btn btn-outline" onclick="exportarJSON()" title="Salvar progresso"><span class="txt">Salvar</span> 💾</button>
-      <button class="btn btn-outline" onclick="document.getElementById('importFile').click()" title="Carregar progresso"><span class="txt">Abrir</span> 📂</button>
+      <button class="btn btn-outline" onclick="exportarJSON()" title="Salvar progresso em arquivo"><span class="txt">Salvar</span> 💾</button>
+      <button class="btn btn-outline" onclick="document.getElementById('importFile').click()" title="Carregar progresso de arquivo"><span class="txt">Abrir</span> 📂</button>
       <input type="file" id="importFile" accept="application/json" onchange="importarJSON(event)">
-      <button class="btn btn-rosa" onclick="window.print()"><span class="txt">Imprimir</span> 🖨️</button>
+      <button class="btn btn-outline" onclick="limparTudo()" title="Apagar tudo e começar de novo"><span class="txt">Limpar</span> 🗑️</button>
+      <button class="btn btn-rosa" onclick="imprimirRelatorio()"><span class="txt">Imprimir</span> 🖨️</button>
     </div>
   </div>
 </div>
@@ -452,6 +462,8 @@ input[type=file]{ display:none; }
 </div>
 
 <div class="conteudo" id="conteudo"></div>
+
+<div class="impressao" id="impressao"></div>
 
 <div class="lightbox" id="lightbox">
   <button class="lightbox-close" onclick="fecharLightbox()">✕</button>
@@ -532,6 +544,8 @@ const DADOS = [
   ]}
 ];
 
+const CHAVE_LOCAL = "checklistCasaChocolate_v1";
+
 let estado = { loja:"", acompanhou:"", data:"", auditor:"", categorias:[] };
 let abaAtiva = 0; // índice da categoria ativa, ou "resumo"
 
@@ -541,7 +555,49 @@ function estadoInicial(){
     itens: cat.itens.map(txt => ({ texto: txt, nota:"", comentario:"", fotos:[] }))
   }));
 }
-estadoInicial();
+
+function salvarLocal(){
+  try{
+    coletarEstado();
+    localStorage.setItem(CHAVE_LOCAL, JSON.stringify(estado));
+  }catch(err){
+    // armazenamento cheio ou indisponível — ignora silenciosamente
+  }
+}
+
+function carregarLocal(){
+  try{
+    const salvo = localStorage.getItem(CHAVE_LOCAL);
+    if(!salvo) return false;
+    const dados = JSON.parse(salvo);
+    if(!dados || !Array.isArray(dados.categorias) || dados.categorias.length !== DADOS.length) return false;
+    estado = dados;
+    return true;
+  }catch(err){
+    return false;
+  }
+}
+
+function limparTudo(){
+  if(!confirm("Isso vai apagar todas as notas, comentários e fotos preenchidos nesta auditoria. Deseja continuar?")) return;
+  try{ localStorage.removeItem(CHAVE_LOCAL); }catch(err){}
+  estado = { loja:"", acompanhou:"", data:"", auditor:"", categorias:[] };
+  estadoInicial();
+  abaAtiva = 0;
+  $('acompanhou').value = "";
+  $('auditor').value = "";
+  $('dataAplicacao').valueAsDate = new Date();
+  estado.data = $('dataAplicacao').value;
+  renderLojas();
+  renderAbas();
+  renderConteudo();
+  atualizarResumo();
+  mostrarToast("Tudo limpo — começando do zero ✓");
+}
+
+if(!carregarLocal()){
+  estadoInicial();
+}
 
 const $ = id => document.getElementById(id);
 
@@ -553,7 +609,7 @@ function renderLojas(){
     b.type="button";
     b.className="loja-btn" + (estado.loja===nome ? " ativo":"");
     b.textContent = nome;
-    b.onclick = ()=>{ estado.loja = nome; renderLojas(); };
+    b.onclick = ()=>{ estado.loja = nome; renderLojas(); salvarLocal(); };
     box.appendChild(b);
   });
 }
@@ -627,7 +683,7 @@ function renderConteudo(){
     const coment = document.createElement('textarea');
     coment.placeholder = "Comentário (opcional)";
     coment.value = item.comentario;
-    coment.oninput = (e)=>{ item.comentario = e.target.value; };
+    coment.oninput = (e)=>{ item.comentario = e.target.value; salvarLocal(); };
     extra.appendChild(coment);
 
     const fotosRow = document.createElement('div');
@@ -684,6 +740,7 @@ function renderFotos(container, item){
     t.querySelector('.rm').onclick = ()=>{
       item.fotos.splice(fi,1);
       renderFotos(container, item);
+      salvarLocal();
     };
     container.appendChild(t);
   });
@@ -700,7 +757,7 @@ function renderFotos(container, item){
       reader.onload = ()=>{
         item.fotos.push(reader.result);
         pendentes--;
-        if(pendentes===0) renderFotos(container, item);
+        if(pendentes===0){ renderFotos(container, item); salvarLocal(); }
       };
       reader.readAsDataURL(f);
     });
@@ -751,6 +808,7 @@ function atualizarTudo(){
   }
   renderAbas();
   atualizarResumo();
+  salvarLocal();
 }
 
 function abrirLightbox(src){
@@ -806,6 +864,7 @@ function importarJSON(e){
       renderAbas();
       renderConteudo();
       atualizarResumo();
+      salvarLocal();
       mostrarToast("Auditoria carregada ✓");
     }catch(err){
       mostrarToast("Arquivo inválido");
@@ -815,19 +874,92 @@ function importarJSON(e){
   e.target.value = "";
 }
 
+function montarImpressao(){
+  coletarEstado();
+  const box = $('impressao');
+  const {obtido, possivel} = totalGeral();
+  const pct = possivel ? (obtido/possivel*100) : 0;
+  const pctStr = pct.toFixed(1).replace('.',',') + '%';
+  const aprovada = pct >= 95;
+
+  let html = `
+    <div style="margin-bottom:18px;">
+      <p class="marca" style="color:var(--rosa);">Casa do Chocolate</p>
+      <h1 style="margin:0 0 4px;">Avaliação Estrutural por Loja</h1>
+      <p style="margin:0; color:var(--texto-suave); font-size:13.5px;">
+        Loja: <b>${estado.loja || "—"}</b> &nbsp;·&nbsp;
+        Data: <b>${estado.data || "—"}</b> &nbsp;·&nbsp;
+        Acompanhou: <b>${estado.acompanhou || "—"}</b> &nbsp;·&nbsp;
+        Auditor(a): <b>${estado.auditor || "—"}</b>
+      </p>
+    </div>`;
+
+  estado.categorias.forEach(cat=>{
+    const t = totalCategoria(cat);
+    const p = t.possivel ? (t.obtido/t.possivel*100) : 0;
+    html += `<div class="categoria" style="margin-bottom:18px;">
+      <div class="cat-cab"><h2>${cat.nome}</h2><div class="cat-total">${t.obtido} / ${t.possivel} pts &nbsp;·&nbsp; <b>${p.toFixed(1).replace('.',',')}%</b></div></div>`;
+    cat.itens.forEach(item=>{
+      html += `<div class="item" style="grid-template-columns:1fr 90px;">
+        <div class="item-pergunta">${item.texto}</div>
+        <div class="item-nota"><input type="text" value="${item.nota!==""?item.nota:"—"}" readonly><small>nota 1 a 10</small></div>
+        <div class="item-extra">`;
+      if(item.comentario){
+        html += `<div style="font-size:13px; color:var(--texto-suave);"><b>Comentário:</b> ${item.comentario}</div>`;
+      }
+      if(item.fotos && item.fotos.length){
+        html += `<div>`;
+        item.fotos.forEach(src=>{
+          html += `<span class="foto-impressao"><img src="${src}"></span>`;
+        });
+        html += `</div>`;
+      }
+      html += `</div></div>`;
+    });
+    html += `</div>`;
+  });
+
+  html += `<div class="final-card">
+      <div style="font-size:12px; letter-spacing:.1em; text-transform:uppercase; opacity:.75;">Resultado Final</div>
+      <div class="pct-grande">${pctStr}</div>
+      <div class="selo-status ${aprovada?'aprovada':'reprovada'}">${aprovada?'✓ Loja Aprovada':'✕ Loja Reprovada'}</div>
+      <div class="meta">${obtido} de ${possivel} pontos obtidos · aprovação a partir de 95%</div>
+    </div>`;
+
+  box.innerHTML = html;
+}
+
+function imprimirRelatorio(){
+  montarImpressao();
+  setTimeout(()=> window.print(), 50);
+}
+
 // init
+$('acompanhou').value = estado.acompanhou || "";
+$('auditor').value = estado.auditor || "";
+if(estado.data){
+  $('dataAplicacao').value = estado.data;
+}else{
+  $('dataAplicacao').valueAsDate = new Date();
+  estado.data = $('dataAplicacao').value;
+}
+
+$('acompanhou').oninput = ()=>{ estado.acompanhou = $('acompanhou').value; salvarLocal(); };
+$('auditor').oninput = ()=>{ estado.auditor = $('auditor').value; salvarLocal(); };
+$('dataAplicacao').oninput = ()=>{ estado.data = $('dataAplicacao').value; salvarLocal(); };
+
 renderLojas();
 renderAbas();
 renderConteudo();
 atualizarResumo();
+
+window.addEventListener('beforeprint', montarImpressao);
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('sw.js').catch(()=>{});
   });
 }
-$('dataAplicacao').valueAsDate = new Date();
-estado.data = $('dataAplicacao').value;
 </script>
 
 </body>

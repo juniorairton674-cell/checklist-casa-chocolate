@@ -955,6 +955,16 @@ atualizarResumo();
 
 window.addEventListener('beforeprint', montarImpressao);
 
+window.addEventListener("beforeunload", () => {
+  salvarLocal();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    salvarLocal();
+  }
+});
+
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('sw.js').catch(()=>{});

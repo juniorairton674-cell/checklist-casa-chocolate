@@ -1,4 +1,4 @@
-const CACHE_NAME = "checklist-cdc-v1";
+const CACHE_NAME = "checklist-cdc-v2";
 const ARQUIVOS = [
   "./",
   "./index.html",
@@ -26,6 +26,23 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  const ehPagina = event.request.mode === "navigate" || event.request.destination === "document";
+
+  if (ehPagina) {
+    // HTML: sempre busca a versão mais nova primeiro (evita ficar preso em cache antigo)
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResp) => {
+          const clone = networkResp.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return networkResp;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // demais arquivos (ícones, manifest): cache primeiro, com atualização em segundo plano
   event.respondWith(
     caches.match(event.request).then((resp) => {
       return (

@@ -405,6 +405,7 @@ input[type=file]{ display:none; }
   .impressao{ display:block !important; max-width:960px; margin:24px auto; padding:0 20px; }
 }
 </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -545,6 +546,13 @@ const DADOS = [
 ];
 
 const CHAVE_LOCAL = "checklistCasaChocolate_v1";
+  const SUPABASE_URL = "https://qnzawavtnjifaipisedk.supabase.co";
+const SUPABASE_KEY = "sb_publishable_ageG1xMvyewSBb459UlRKQ_heR2duH2";
+
+const supabase = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
 
 let estado = { loja:"", acompanhou:"", data:"", auditor:"", categorias:[] };
 let abaAtiva = 0; // índice da categoria ativa, ou "resumo"
@@ -748,22 +756,33 @@ function renderFotos(container, item){
   add.className = "add-foto";
   add.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Foto
     <input type="file" accept="image/*" multiple capture="environment">`;
-  add.querySelector('input').onchange = (e)=>{
-    const files = Array.from(e.target.files);
-    let pendentes = files.length;
-    if(!pendentes) return;
-    files.forEach(f=>{
-      const reader = new FileReader();
-      reader.onload = ()=>{
-        item.fotos.push(reader.result);
-        pendentes--;
-        if(pendentes===0){ renderFotos(container, item); salvarLocal(); }
-      };
-      reader.readAsDataURL(f);
-    });
-  };
-  container.appendChild(add);
-}
+add.querySelector("input").onchange = async (e) => {
+  const files = Array.from(e.target.files);
+
+  for (const file of files) {
+
+    const nomeArquivo =
+      Date.now() + "_" + Math.random().toString(36).substring(2) + "_" + file.name;
+
+    const { error } = await supabase.storage
+      .from("fotos-checklist")
+      .upload(nomeArquivo, file);
+
+    if (error) {
+      alert("Erro ao enviar foto: " + error.message);
+      continue;
+    }
+
+    const { data } = supabase.storage
+      .from("fotos-checklist")
+      .getPublicUrl(nomeArquivo);
+
+    item.fotos.push(data.publicUrl);
+  }
+
+  renderFotos(container, item);
+  salvarLocal();
+};
 
 function totalCategoria(cat){
   let obtido=0, possivel=0;
